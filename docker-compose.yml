@@ -64,11 +64,16 @@ services:
   #     - SPARK_MASTER=spark://spark-master:7077
 
 
+  # docker-compose up -d
+  # docker-compose build --no-cache
+  # docker-compose down -v
+  
   # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --list
 
+  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic audio-topic --partitions 1 --replication-factor 1
   # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic prediction-topic --partitions 1 --replication-factor 1
 
 
   # docker exec -it spark spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 /spark-app/stream_inference.py
-  # docker exec -it kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic prediction-topic --from-beginning
+
   

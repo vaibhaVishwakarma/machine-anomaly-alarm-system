@@ -6,3 +6,6 @@ torch
 torchaudio
 numpy
 torchcodec
+joblib
+xgboost
+librosa

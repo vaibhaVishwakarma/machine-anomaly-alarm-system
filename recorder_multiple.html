@@ -1,48 +1,43 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Upload Multiple 10s Clips</title>
+    <title>Upload Multiple Audio Clips</title>
 </head>
 <body>
 
 <h2>Upload Multiple 10s Audio Clips</h2>
 
-<input type="file" id="fileInput" accept=".wav" multiple />
-<button id="uploadBtn">Send for Prediction</button>
+<input type="file" id="audioFiles" multiple accept="audio/*">
+<button onclick="uploadClips()">Upload</button>
 
-<p id="status">Idle</p>
+<p id="status"></p>
 
 <script>
-const uploadBtn = document.getElementById("uploadBtn");
-const fileInput = document.getElementById("fileInput");
-const status = document.getElementById("status");
+async function uploadClips() {
+    const files = document.getElementById("audioFiles").files;
 
-uploadBtn.onclick = async () => {
-
-    const files = fileInput.files;
-
-    if (!files.length) {
-        status.innerText = "Select 10–15 WAV clips.";
+    if (files.length === 0) {
+        alert("Select files first");
         return;
     }
 
     const formData = new FormData();
-
     for (let i = 0; i < files.length; i++) {
         formData.append("files", files[i]);
     }
 
-    status.innerText = "Uploading clips...";
+    document.getElementById("status").innerText = "Uploading...";
 
-    const response = await fetch("http://127.0.0.1:5000/upload_multiple", {
+    const response = await fetch("http://localhost:8000/upload_clips", {
         method: "POST",
         body: formData
     });
 
-    const result = await response.json();
+    const data = await response.json();
 
-    status.innerText = result.status;
-};
+    document.getElementById("status").innerText =
+        "Uploaded " + data.count + " clips successfully.";
+}
 </script>
 
 </body>
