@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Multiple 10s Clips</title>
+</head>
+<body>
+
+<h2>Upload Multiple 10s Audio Clips</h2>
+
+<input type="file" id="fileInput" accept=".wav" multiple />
+<button id="uploadBtn">Send for Prediction</button>
+
+<p id="status">Idle</p>
+
+<script>
+const uploadBtn = document.getElementById("uploadBtn");
+const fileInput = document.getElementById("fileInput");
+const status = document.getElementById("status");
+
+uploadBtn.onclick = async () => {
+
+    const files = fileInput.files;
+
+    if (!files.length) {
+        status.innerText = "Select 10–15 WAV clips.";
+        return;
+    }
+
+    const formData = new FormData();
+
+    for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+    }
+
+    status.innerText = "Uploading clips...";
+
+    const response = await fetch("http://127.0.0.1:5000/upload_multiple", {
+        method: "POST",
+        body: formData
+    });
+
+    const result = await response.json();
+
+    status.innerText = result.status;
+};
+</script>
+
+</body>
+</html>

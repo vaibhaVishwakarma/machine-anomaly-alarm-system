@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Anomaly Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>Real-Time Audio Anomaly Dashboard</h2>
+
+<div>
+    <p>Total Events: <span id="total">0</span></p>
+    <p>Normal: <span id="normal">0</span></p>
+    <p>Anomalous: <span id="anomalous">0</span></p>
+</div>
+
+<canvas id="chart" width="900" height="400"></canvas>
+
+<script>
+
+const ctx = document.getElementById('chart').getContext('2d');
+
+let chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [
+            {
+                label: 'Anomaly Score',
+                data: [],
+                borderColor: 'red',
+                fill: false
+            },
+            {
+                label: 'Threshold (3.0)',
+                data: [],
+                borderColor: 'blue',
+                borderDash: [5,5],
+                fill: false
+            }
+        ]
+    },
+    options: {
+        responsive: false,
+        animation: false,
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+async function updateDashboard() {
+
+    // Fetch summary
+    const summaryRes = await fetch("http://localhost:5000/dashboard/summary");
+    const summary = await summaryRes.json();
+
+    document.getElementById("total").innerText = summary.total_events;
+    document.getElementById("normal").innerText = summary.normal_count;
+    document.getElementById("anomalous").innerText = summary.anomalous_count;
+
+    // Fetch recent predictions
+    const recentRes = await fetch("http://localhost:5000/dashboard/recent");
+    const recent = await recentRes.json();
+
+    const labels = recent.map(r => r.timestamp);
+    const scores = recent.map(r => r.anomaly_score);
+    const threshold = recent.map(() => 3.0);
+
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = scores;
+    chart.data.datasets[1].data = threshold;
+    chart.update();
+}
+
+setInterval(updateDashboard, 3000);
+
+</script>
+
+</body>
+</html>

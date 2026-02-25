@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Player</title>
+</head>
+<body>
+
+<h2>Latest Audio Playback</h2>
+
+<audio id="player" controls></audio>
+
+<div id="stats"></div>
+
+<script>
+const player = document.getElementById("player");
+const stats = document.getElementById("stats");
+
+let lastAudio = "";
+
+async function fetchAudio() {
+    try {
+        const response = await fetch("http://localhost:8000/latest");
+        const data = await response.json();
+
+      if (data.audio && data.audio !== lastAudio) {
+            lastAudio = data.audio;
+
+            const mimeType = "audio/wav"; // change if needed
+            const src = `data:${mimeType};base64,${data.audio}`;
+
+            player.src = src;
+            player.load();
+            player.play().catch(() => {});
+
+            stats.innerHTML = `<p>Size: ${data.size_kb} KB</p>`;
+        }
+            } catch (err) {
+                console.error("Fetch failed", err);
+            }
+        }
+
+setInterval(fetchAudio, 5000);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,38 @@
+# ------------------------------------------------------------
+# Base Image (AWS Bitnami Spark)
+# ------------------------------------------------------------
+FROM public.ecr.aws/bitnami/spark:latest
+
+USER root
+
+# ------------------------------------------------------------
+# Install pip (Bitnami Python already exists)
+# ------------------------------------------------------------
+RUN /opt/bitnami/python/bin/python -m pip install --upgrade pip
+
+# ------------------------------------------------------------
+# Install PyTorch CPU + dependencies
+# ------------------------------------------------------------
+RUN /opt/bitnami/python/bin/pip install torch torchaudio numpy
+
+# ------------------------------------------------------------
+# Fix missing passwd entry (Invalid UID error fix)
+# ------------------------------------------------------------
+RUN echo "sparkuser:x:1001:1001::/home/sparkuser:/bin/bash" >> /etc/passwd && \
+    mkdir -p /home/sparkuser && \
+    chown -R 1001:1001 /home/sparkuser
+
+ENV HOME=/home/sparkuser
+
+# ------------------------------------------------------------
+# Fix Ivy cache issue
+# ------------------------------------------------------------
+ENV SPARK_SUBMIT_OPTS="-Divy.home=/home/sparkuser -Divy.cache.dir=/home/sparkuser/.ivy2"
+
+# ------------------------------------------------------------
+# Force Spark to use Bitnami Python (IMPORTANT)
+# ------------------------------------------------------------
+ENV PYSPARK_PYTHON=/opt/bitnami/python/bin/python
+ENV PYSPARK_DRIVER_PYTHON=/opt/bitnami/python/bin/python
+
+USER 1001
