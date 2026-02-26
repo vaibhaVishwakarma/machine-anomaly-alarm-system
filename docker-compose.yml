@@ -42,31 +42,24 @@ services:
       - "8081:8080"
     volumes:
       - ./spark-app:/spark-app
-  # spark-master:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.spark
-  #   container_name: spark-master
-  #   ports:
-  #     - "7077:7077"
-  #     - "8081:8080"
-  #   environment:
-  #     - INIT_DAEMON_STEP=setup_spark
-  #   volumes:
-  #     - ./spark-app:/spark-app
 
-  # spark-worker:
-  #   image: bde2020/spark-worker:3.3.0-hadoop3.3
-  #   container_name: spark-worker
-  #   depends_on:
-  #     - spark-master
-  #   environment:
-  #     - SPARK_MASTER=spark://spark-master:7077
 
+
+
+
+
+# ======== Docker commands =============
+
+
+
+  # docker-compose up -d
+  # docker-compose down -v
+  # docker-compose build --no-cache
 
   # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --list
 
-  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic prediction-topic --partitions 1 --replication-factor 1
+  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic raw_audio_topic  --partitions 1 --replication-factor 1
+  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic inference_results_topic  --partitions 1 --replication-factor 1
 
 
   # docker exec -it spark spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 /spark-app/stream_inference.py

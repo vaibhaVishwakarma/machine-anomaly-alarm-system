@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-Time Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+
+<h2>Anomaly Score Timeline</h2>
+<canvas id="scoreChart"></canvas>
+
+<script>
+
+let ctx = document.getElementById("scoreChart").getContext("2d");
+
+let chart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [] },
+    options: {
+        responsive: true,
+        scales: {
+            x: { type: 'time' },
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+async function updateChart() {
+
+    const res = await fetch('/predictions');
+    const data = await res.json();
+
+    console.log("DATA:", data);   // debug
+
+    if (data.length === 0) return;
+
+    let normalPoints = [];
+    let anomalyPoints = [];
+
+    data.forEach(item => {
+
+        let t = new Date(item.timestamp * 1000);
+
+        if (item.prediction === "NORMAL") {
+            normalPoints.push({ x: t, y: item.anomaly_score });
+        } else {
+            anomalyPoints.push({ x: t, y: item.anomaly_score });
+        }
+    });
+
+    chart.data.datasets = [
+        {
+            label: "Normal",
+            data: normalPoints,
+            borderColor: "green",
+            tension: 0.3
+        },
+        {
+            label: "Anomaly",
+            data: anomalyPoints,
+            borderColor: "red",
+            tension: 0.3
+        }
+    ];
+
+    chart.update();
+}
+
+setInterval(updateChart, 2000);
+
+</script>
+
+</body>
+</html>
+
+
+

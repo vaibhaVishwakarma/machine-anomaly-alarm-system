@@ -1,107 +1,119 @@
-from pyspark.sql import SparkSession
-import json
-import base64
+from base64 import b64decode
 import io
+import json
 import torch
 import torchaudio
-import datetime
+import torch.nn.functional as F
 
-# ===============================
+from pyspark.sql import SparkSession
+from pyspark.sql.types import *
+from pyspark.sql.functions import *
+
+# ---------------------------
 # Spark Session
-# ===============================
-
+# ---------------------------
 spark = SparkSession.builder \
-    .appName("AudioAnomalyDetection") \
+    .appName("PumpInference") \
     .getOrCreate()
 
 spark.sparkContext.setLogLevel("WARN")
 
-# ===============================
-# Read Kafka Stream
-# ===============================
+# ---------------------------
+# Load Model
+# ---------------------------
+device = torch.device("cpu")
+model = torch.jit.load("/spark-app/model/sw_wavenet_traced.pt", map_location=device)
+model.eval()
 
-raw_df = spark.readStream \
-    .format("kafka") \
-    .option("kafka.bootstrap.servers", "kafka:29092") \
-    .option("subscribe", "audio-topic") \
-    .option("startingOffsets", "latest") \
-    .load()
+EXPECTED_SAMPLES = 160000
+THRESHOLD = 2.10
 
-json_df = raw_df.selectExpr("CAST(value AS STRING) as json_string")
+# ---------------------------
+# Inference Function
+# ---------------------------
+def run_inference(audio_b64, machine_id):
 
-# ===============================
-# Batch Inference Function
-# ===============================
+    audio_bytes = b64decode(audio_b64)
+    waveform, sr = torchaudio.load(io.BytesIO(audio_bytes))
 
+    if waveform.shape[1] < EXPECTED_SAMPLES:
+        pad = EXPECTED_SAMPLES - waveform.shape[1]
+        waveform = F.pad(waveform, (0, pad))
+    else:
+        waveform = waveform[:, :EXPECTED_SAMPLES]
+
+    waveform = waveform.unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        logits = model(waveform)   # ← FIXED HERE
+        probs = F.softmax(logits, dim=1)
+
+        score = -torch.log(
+            probs[0, int(machine_id)] + 1e-9
+        ).item()
+
+    prediction = "ANOMALY" if score >= THRESHOLD else "NORMAL"
+
+    return float(score), prediction
+
+
+# ---------------------------
+# foreachBatch Processing
+# ---------------------------
 def process_batch(batch_df, batch_id):
-
-    if batch_df.count() == 0:
-        return
-
-    from model_definition import SW_WaveNet_Pipeline
-
-    device = torch.device("cpu")
-
-    model = SW_WaveNet_Pipeline(num_classes=41)
-    model.load_state_dict(
-        torch.load("/spark-app/model/sw_wavenet.pth", map_location=device)
-    )
-    model.eval()
 
     rows = batch_df.collect()
     results = []
 
     for row in rows:
-        try:
-            data = json.loads(row.json_string)
+        score, pred = run_inference(row.audio, row.machine_id)
 
-            audio_bytes = base64.b64decode(data["audio"])
-            size = data["size"]
-
-            signal, sr = torchaudio.load(io.BytesIO(audio_bytes))
-
-            if signal.shape[1] < 160000:
-                pad = 160000 - signal.shape[1]
-                signal = torch.nn.functional.pad(signal, (0, pad))
-            else:
-                signal = signal[:, :160000]
-
-            signal = signal.unsqueeze(0)
-
-            score = model.get_anomaly_score(signal, target_machine_id=0)
-            classification = "anomalous" if score > 3.0 else "normal"
-
-            results.append({
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "anomaly_score": float(score),
-                "classification": classification,
-                "size_kb": float(size / 1024.0)
-            })
-
-        except:
-            results.append({
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "anomaly_score": 0.0,
-                "classification": "error",
-                "size_kb": 0.0
-            })
+        results.append({
+            "machine_id": row.machine_id,
+            "source_id": row.source_id,
+            "timestamp": row.timestamp,
+            "anomaly_score": score,
+            "prediction": pred,
+            "size_kb": row.size_kb
+        })
 
     if results:
-        spark.createDataFrame(results) \
-            .selectExpr("to_json(struct(*)) AS value") \
-            .write \
-            .format("kafka") \
-            .option("kafka.bootstrap.servers", "kafka:29092") \
-            .option("topic", "prediction-topic") \
-            .save()
+        out_df = spark.createDataFrame(results)
 
-# ===============================
-# Start Streaming
-# ===============================
+        out_df.selectExpr(
+            "CAST(machine_id AS STRING) AS key",
+            "to_json(struct(*)) AS value"
+        ).write \
+         .format("kafka") \
+         .option("kafka.bootstrap.servers", "kafka:29092") \
+         .option("topic", "inference_results_topic") \
+         .save()
+
+
+# ---------------------------
+# Read from Kafka
+# ---------------------------
+input_schema = StructType([
+    StructField("machine_id", IntegerType()),
+    StructField("source_id", StringType()),
+    StructField("timestamp", LongType()),
+    StructField("audio", StringType()),
+    StructField("size_kb", DoubleType())
+])
+
+df = spark.readStream \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", "kafka:29092") \
+    .option("subscribe", "raw_audio_topic") \
+    .load()
+
+json_df = df.select(
+    from_json(col("value").cast("string"),
+              input_schema).alias("data")
+).select("data.*")
 
 query = json_df.writeStream \
     .foreachBatch(process_batch) \
-    .option("checkpointLocation", "/tmp/spark-checkpoints") \
     .start()
 
 query.awaitTermination()
