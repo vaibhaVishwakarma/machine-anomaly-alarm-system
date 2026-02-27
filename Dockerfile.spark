@@ -13,7 +13,7 @@ RUN /opt/bitnami/python/bin/python -m pip install --upgrade pip
 # ------------------------------------------------------------
 # Install PyTorch CPU + dependencies
 # ------------------------------------------------------------
-RUN /opt/bitnami/python/bin/pip install torch torchaudio numpy torchcodec  soundfile
+RUN /opt/bitnami/python/bin/pip install torch torchaudio numpy torchcodec soundfile
 
 
 # ------------------------------------------------------------
@@ -22,6 +22,17 @@ RUN /opt/bitnami/python/bin/pip install torch torchaudio numpy torchcodec  sound
 RUN echo "sparkuser:x:1001:1001::/home/sparkuser:/bin/bash" >> /etc/passwd && \
     mkdir -p /home/sparkuser && \
     chown -R 1001:1001 /home/sparkuser
+
+# Install FFmpeg and the required shared library headers
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libswresample-dev \
+    libswscale-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV HOME=/home/sparkuser
 

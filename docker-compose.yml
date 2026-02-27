@@ -44,7 +44,27 @@ services:
       - ./spark-app:/spark-app
 
 
-
+  airflow:
+    image: apache/airflow:2.9.3
+    container_name: airflow
+    restart: always
+    depends_on:
+      - kafka
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: "SequentialExecutor"
+      AIRFLOW__CORE__FERNET_KEY: "your_fernet_key"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "your_secret_key"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      airflow db init &&
+      airflow users create --username admin --password admin --firstname admin --lastname user --role Admin --email admin@example.com &&
+      airflow webserver & airflow scheduler
+      "
 
 
 

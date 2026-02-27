@@ -1,99 +1,103 @@
-from base64 import b64decode
+import base64
 import io
 import json
+import time
+from collections import defaultdict
+
 import torch
 import torchaudio
-import torch.nn.functional as F
-
 from pyspark.sql import SparkSession
-from pyspark.sql.types import *
-from pyspark.sql.functions import *
+from pyspark.sql.functions import col, from_json
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
-# ---------------------------
-# Spark Session
-# ---------------------------
+# ============================
+# CONFIG
+# ============================
+
+EXPECTED_SR = 16000
+WINDOW_CHUNKS = 10     # 10 seconds
+STEP_CHUNKS = 5        # inference every 5 seconds
+THRESHOLD = 1.192093e-07 + 75e-5
+
+MODEL_PATH = "/spark-app/model/sw_wavenet_traced_cpu.pt"
+
+# ============================
+# LOAD MODEL
+# ============================
+
+device = torch.device("cpu")
+model = torch.jit.load(MODEL_PATH, map_location=device)
+model.eval()
+
+print("Model loaded successfully")
+
+# ============================
+# BUFFER STORE
+# ============================
+
+buffer_store = defaultdict(list)
+
+# ============================
+# INFERENCE FUNCTION
+# ============================
+
+def run_inference(machine_id):
+
+    buffer = buffer_store[machine_id]
+    buffer_length = len(buffer)
+
+    if buffer_length < WINDOW_CHUNKS:
+        return None
+
+    # Run only at step intervals
+    if (buffer_length - WINDOW_CHUNKS) % STEP_CHUNKS != 0:
+        return None
+
+    # Take last 10 chunks
+    window_chunks = buffer[-WINDOW_CHUNKS:]
+
+    full_waveform = torch.cat(window_chunks, dim=1)
+
+    if full_waveform.dim() == 2:
+        full_waveform = full_waveform.unsqueeze(0)
+
+    print("Inference input shape:", full_waveform.shape)
+
+    try:
+        with torch.no_grad():
+            logits = model(full_waveform)
+            probs = torch.softmax(logits, dim=1)
+
+        machine_index = int(machine_id)
+
+        if machine_index >= probs.shape[1]:
+            print("Invalid machine id")
+            return None
+
+        prob = probs[0, machine_index]
+        score = -torch.log(prob + 1e-9).item()
+
+        prediction = "ANOMALY" if score >= THRESHOLD else "NORMAL"
+
+        return score, prediction
+
+    except Exception as e:
+        print("Inference error:", e)
+        return None
+
+
+# ============================
+# SPARK STREAM
+# ============================
+
 spark = SparkSession.builder \
-    .appName("PumpInference") \
+    .appName("AudioStreamInference") \
+    .config("spark.sql.streaming.metricsEnabled", "false") \
     .getOrCreate()
 
 spark.sparkContext.setLogLevel("WARN")
 
-# ---------------------------
-# Load Model
-# ---------------------------
-device = torch.device("cpu")
-model = torch.jit.load("/spark-app/model/sw_wavenet_traced.pt", map_location=device)
-model.eval()
-
-EXPECTED_SAMPLES = 160000
-THRESHOLD = 2.10
-
-# ---------------------------
-# Inference Function
-# ---------------------------
-def run_inference(audio_b64, machine_id):
-
-    audio_bytes = b64decode(audio_b64)
-    waveform, sr = torchaudio.load(io.BytesIO(audio_bytes))
-
-    if waveform.shape[1] < EXPECTED_SAMPLES:
-        pad = EXPECTED_SAMPLES - waveform.shape[1]
-        waveform = F.pad(waveform, (0, pad))
-    else:
-        waveform = waveform[:, :EXPECTED_SAMPLES]
-
-    waveform = waveform.unsqueeze(0).to(device)
-
-    with torch.no_grad():
-        logits = model(waveform)   # ← FIXED HERE
-        probs = F.softmax(logits, dim=1)
-
-        score = -torch.log(
-            probs[0, int(machine_id)] + 1e-9
-        ).item()
-
-    prediction = "ANOMALY" if score >= THRESHOLD else "NORMAL"
-
-    return float(score), prediction
-
-
-# ---------------------------
-# foreachBatch Processing
-# ---------------------------
-def process_batch(batch_df, batch_id):
-
-    rows = batch_df.collect()
-    results = []
-
-    for row in rows:
-        score, pred = run_inference(row.audio, row.machine_id)
-
-        results.append({
-            "machine_id": row.machine_id,
-            "source_id": row.source_id,
-            "timestamp": row.timestamp,
-            "anomaly_score": score,
-            "prediction": pred,
-            "size_kb": row.size_kb
-        })
-
-    if results:
-        out_df = spark.createDataFrame(results)
-
-        out_df.selectExpr(
-            "CAST(machine_id AS STRING) AS key",
-            "to_json(struct(*)) AS value"
-        ).write \
-         .format("kafka") \
-         .option("kafka.bootstrap.servers", "kafka:29092") \
-         .option("topic", "inference_results_topic") \
-         .save()
-
-
-# ---------------------------
-# Read from Kafka
-# ---------------------------
-input_schema = StructType([
+schema = StructType([
     StructField("machine_id", IntegerType()),
     StructField("source_id", StringType()),
     StructField("timestamp", LongType()),
@@ -101,19 +105,81 @@ input_schema = StructType([
     StructField("size_kb", DoubleType())
 ])
 
-df = spark.readStream \
+kafka_df = spark.readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", "kafka:29092") \
     .option("subscribe", "raw_audio_topic") \
     .load()
 
-json_df = df.select(
-    from_json(col("value").cast("string"),
-              input_schema).alias("data")
-).select("data.*")
+json_df = kafka_df.selectExpr("CAST(value AS STRING)") \
+    .select(from_json(col("value"), schema).alias("data")) \
+    .select("data.*")
+
+
+# ============================
+# PROCESS BATCH
+# ============================
+
+def process_batch(batch_df, batch_id):
+
+    print(f"\nProcessing batch {batch_id} | Rows: {batch_df.count()}")
+
+    rows = batch_df.collect()
+
+    for row in rows:
+
+        machine_id = row.machine_id
+        audio_b64 = row.audio
+
+        try:
+            audio_bytes = base64.b64decode(audio_b64)
+            waveform, sr = torchaudio.load(io.BytesIO(audio_bytes))
+
+            if sr != EXPECTED_SR:
+                waveform = torchaudio.functional.resample(waveform, sr, EXPECTED_SR)
+
+            buffer_store[machine_id].append(waveform)
+
+            print(f"Machine {machine_id} buffer size: {len(buffer_store[machine_id])}")
+
+            result = run_inference(machine_id)
+
+            if result is None:
+                continue
+
+            score, prediction = result
+
+            output = {
+                "timestamp": int(time.time()),
+                "machine_id": machine_id,
+                "prediction": prediction,
+                "anomaly_score": score,
+                "size_kb": row.size_kb
+            }
+
+            print("Publishing prediction:", output)
+
+            spark.createDataFrame(
+                [(json.dumps(output),)],
+                ["value"]
+            ).write \
+             .format("kafka") \
+             .option("kafka.bootstrap.servers", "kafka:29092") \
+             .option("topic", "prediction_topic") \
+             .save()
+
+        except Exception as e:
+            print("Error processing row:", e)
+
+
+# ============================
+# START STREAM
+# ============================
 
 query = json_df.writeStream \
     .foreachBatch(process_batch) \
+    .trigger(processingTime="5 seconds") \
+    .option("checkpointLocation", "/tmp/checkpoint_audio_v3") \
     .start()
 
 query.awaitTermination()

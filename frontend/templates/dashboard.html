@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Streaming Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 40px;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            margin-bottom: 25px;
+        }
+
+        canvas {
+            max-height: 300px;
+        }
+
+        .circle-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+        }
+
+        .circle {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            border: 10px solid #007bff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            background: #eef5ff;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Real-Time Monitoring Dashboard</h2>
+
+<div class="card">
+    <h3>Last 150 Seconds Results</h3>
+    <canvas id="resultChart"></canvas>
+</div>
+
+<div class="card">
+    <h3>Data Throughput (KB/sec)</h3>
+    <canvas id="dataChart"></canvas>
+</div>
+
+<div class="card circle-container">
+    <div class="circle" id="totalDataCircle">
+        0 KB
+    </div>
+</div>
+<script>
+
+const WINDOW_SECONDS = 150;   // 150 sec window (30 inferences × 5 sec)
+
+const resultCtx = document.getElementById("resultChart");
+const dataCtx = document.getElementById("dataChart");
+
+const resultChart = new Chart(resultCtx, {
+    type: 'bar',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Inference Result',
+            data: [],
+            backgroundColor: []
+        }]
+    },
+    options: {
+        scales: {
+            y: {
+                min: 0,
+                max: 2,
+                ticks: {
+                    stepSize: 1,
+                    callback: function(value) {
+                        if (value === 1) return "NORMAL";
+                        if (value === 2) return "ANOMALY";
+                        return "";
+                    }
+                }
+            }
+        }
+    }
+});
+
+const dataChart = new Chart(dataCtx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'KB per Inference',
+            data: [],
+            borderColor: '#007bff',
+            tension: 0.3
+        }]
+    },
+    options: {
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+async function updateDashboard() {
+
+    const res1 = await fetch("/predictions");
+    const predictions = await res1.json();
+
+    const res2 = await fetch("/sequence_status");
+    const seqStatus = await res2.json();
+
+    updateResultChart(predictions);
+    updateDataChart(predictions);
+    updateTotalData(seqStatus.total_bytes);
+}
+
+function updateResultChart(predictions) {
+
+    const now = Date.now() / 1000;
+
+    const lastWindow = predictions.filter(p => now - p.timestamp <= WINDOW_SECONDS);
+
+    const labels = [];
+    const data = [];
+    const colors = [];
+
+    lastWindow.forEach(p => {
+
+        labels.push(new Date(p.timestamp * 1000).toLocaleTimeString());
+
+        if (p.prediction === "ANOMALY") {
+            data.push(2);
+            colors.push("#dc3545");
+        } else if (p.prediction === "NORMAL") {
+            data.push(1);
+            colors.push("#28a745");
+        } else {
+            data.push(0);
+            colors.push("#6c757d");
+        }
+    });
+
+    resultChart.data.labels = labels;
+    resultChart.data.datasets[0].data = data;
+    resultChart.data.datasets[0].backgroundColor = colors;
+    resultChart.update();
+}
+
+function updateDataChart(predictions) {
+
+    const now = Date.now() / 1000;
+
+    const lastWindow = predictions.filter(p => now - p.timestamp <= WINDOW_SECONDS);
+
+    const labels = [];
+    const data = [];
+
+    lastWindow.forEach(p => {
+        labels.push(new Date(p.timestamp * 1000).toLocaleTimeString());
+        data.push(p.size_kb || 0);
+    });
+
+    dataChart.data.labels = labels;
+    dataChart.data.datasets[0].data = data;
+    dataChart.update();
+}
+
+function updateTotalData(totalBytes) {
+
+    const kb = (totalBytes / 1024).toFixed(1);
+    document.getElementById("totalDataCircle").innerText = kb + " KB";
+}
+
+setInterval(updateDashboard, 2000);
+
+</script>
+
+</body>
+</html>

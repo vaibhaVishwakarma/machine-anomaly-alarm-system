@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Streaming Simulator</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 40px;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            max-width: 700px;
+            margin-bottom: 25px;
+        }
+
+        #fileList {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .file-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            background: #eef2f7;
+            cursor: grab;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .active {
+            border: 2px solid #007bff;
+            background: #dfefff;
+        }
+
+        .progress-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: #007bff;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        button {
+            padding: 8px 14px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .start { background: #28a745; color: white; }
+        .stop { background: #dc3545; color: white; }
+
+        .status {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+    </style>
+</head>
+<body>
+
+<h2>Audio Streaming Simulator</h2>
+
+<div class="card">
+
+    <input type="file" id="fileInput" multiple accept=".wav">
+    <br><br>
+
+    <ul id="fileList"></ul>
+
+    <br>
+
+    <button class="start" onclick="startSequence()">Start Sequence</button>
+    <button class="stop" onclick="stopSequence()">Stop</button>
+
+    <div class="status" id="statusText"></div>
+
+</div>
+
+<script>
+
+let files = [];
+let locked = false;
+
+const fileList = document.getElementById("fileList");
+
+new Sortable(fileList, {
+    animation: 150
+});
+
+document.getElementById("fileInput").addEventListener("change", function(e) {
+
+    files = Array.from(e.target.files);
+
+    renderFileList();
+});
+
+function renderFileList() {
+
+    fileList.innerHTML = "";
+
+    files.forEach((file, index) => {
+
+        const li = document.createElement("li");
+        li.className = "file-item";
+        li.dataset.index = index;
+        li.innerHTML = file.name + `<div class="progress-bar"></div>`;
+
+        fileList.appendChild(li);
+    });
+}
+
+function getOrderedFiles() {
+
+    const ordered = [];
+    document.querySelectorAll(".file-item").forEach(item => {
+        ordered.push(files[item.dataset.index]);
+    });
+
+    return ordered;
+}
+
+async function startSequence() {
+
+    if (locked) return;
+
+    locked = true;
+
+    const orderedFiles = getOrderedFiles();
+
+    const formData = new FormData();
+
+    orderedFiles.forEach(file => {
+        formData.append("files", file);
+    });
+
+    await fetch("/start_sequence", {
+        method: "POST",
+        body: formData
+    });
+
+    document.getElementById("statusText").innerText = "Sequence running...";
+    pollStatus();
+}
+
+async function stopSequence() {
+
+    await fetch("/stop_sequence", { method: "POST" });
+    locked = false;
+    document.getElementById("statusText").innerText = "Sequence stopped.";
+}
+
+async function pollStatus() {
+
+    if (!locked) return;
+
+    const res = await fetch("/sequence_status");
+    const data = await res.json();
+
+    updateUI(data);
+
+    if (data.running) {
+        setTimeout(pollStatus, 1000);
+    } else {
+        locked = false;
+        document.getElementById("statusText").innerText = "Sequence completed.";
+    }
+}
+
+function updateUI(data) {
+
+    const items = document.querySelectorAll(".file-item");
+
+    items.forEach((item, idx) => {
+
+        item.classList.remove("active");
+
+        const bar = item.querySelector(".progress-bar");
+        bar.style.width = "0%";
+
+        if (idx === data.current_clip && data.running) {
+
+            item.classList.add("active");
+
+            // fake progress animation
+            const progress = ((Date.now()/1000) % 10) * 10;
+            bar.style.width = progress + "%";
+        }
+    });
+}
+
+</script>
+
+</body>
+</html>
