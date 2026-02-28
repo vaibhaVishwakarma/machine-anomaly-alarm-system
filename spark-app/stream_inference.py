@@ -17,9 +17,10 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 EXPECTED_SR = 16000
 WINDOW_CHUNKS = 10     # 10 seconds
 STEP_CHUNKS = 5        # inference every 5 seconds
-THRESHOLD = 1.192093e-07 + 75e-5
+THRESHOLD = 1.192093e-07
 
 MODEL_PATH = "/spark-app/model/sw_wavenet_traced_cpu.pt"
+
 
 # ============================
 # LOAD MODEL
@@ -86,6 +87,87 @@ def run_inference(machine_id):
         return None
 
 
+# =============================================== Decision Layer ========================
+#
+#  
+# ============================
+# EVENT RELIABILITY CONFIG
+# ============================
+
+WINDOW_EVENT_SIZE = 5     # 5 inference outputs (25 sec)
+WINDOW_EVENT_THRESHOLD = 3
+
+ALARM_WINDOW_SIZE = 4     # 4 window events (100 sec)
+ALARM_THRESHOLD = 3
+
+# ============================
+# EVENT STATE STORE
+# ============================
+
+event_state = defaultdict(lambda: {
+    "last_predictions": [],
+    "last_window_events": [],
+    "current_state": "NORMAL"
+})
+
+
+def update_event_state(machine_id, prediction, score):
+
+    state = event_state[machine_id]
+
+    # 1️⃣ Store last 5 predictions
+    state["last_predictions"].append(prediction)
+
+    if len(state["last_predictions"]) > WINDOW_EVENT_SIZE:
+        state["last_predictions"].pop(0)
+
+    # Not enough predictions yet
+    if len(state["last_predictions"]) < WINDOW_EVENT_SIZE:
+        return None
+
+    # 2️⃣ Window Event rule (≥4 anomalies in 5)
+    anomaly_count = state["last_predictions"].count("ANOMALY")
+    window_event = 1 if anomaly_count >= WINDOW_EVENT_THRESHOLD else 0
+
+    # Store last 4 window events
+    state["last_window_events"].append(window_event)
+
+    if len(state["last_window_events"]) > ALARM_WINDOW_SIZE:
+        state["last_window_events"].pop(0)
+
+    # Not enough window events yet
+    if len(state["last_window_events"]) < ALARM_WINDOW_SIZE:
+        return None
+
+    # 3️⃣ Alarm Rule (≥3 window events in 4)
+    window_event_count = sum(state["last_window_events"])
+    alarm_triggered = window_event_count >= ALARM_THRESHOLD
+
+    previous_state = state["current_state"]
+
+    # 4️⃣ State Transition Logic
+    if previous_state == "NORMAL" and alarm_triggered:
+        state["current_state"] = "ALARM"
+
+        severity = "HIGH" if window_event_count == 4 else "MEDIUM"
+
+        alert_payload = {
+            "timestamp": int(time.time()),
+            "machine_id": machine_id,
+            "alarm_state": "ALARM_TRIGGERED",
+            "window_event_count": window_event_count,
+            "model_version": "v1",
+            "severity": severity,
+            "confidence_score": score
+        }
+
+        return alert_payload
+
+    # Recovery condition
+    if previous_state == "ALARM" and window_event_count == 0:
+        state["current_state"] = "NORMAL"
+
+    return None
 # ============================
 # SPARK STREAM
 # ============================
@@ -167,6 +249,25 @@ def process_batch(batch_df, batch_id):
              .option("kafka.bootstrap.servers", "kafka:29092") \
              .option("topic", "prediction_topic") \
              .save()
+            
+            # ==============================
+            # EVENT LOGIC LAYER (PHASE 1)
+            # ==============================
+
+            alert_event = update_event_state(machine_id, prediction, score)
+
+            if alert_event is not None:
+
+                print("Publishing ALERT EVENT:", alert_event)
+
+                spark.createDataFrame(
+                    [(json.dumps(alert_event),)],
+                    ["value"]
+                ).write \
+                .format("kafka") \
+                .option("kafka.bootstrap.servers", "kafka:29092") \
+                .option("topic", "alert_event_topic") \
+                .save()
 
         except Exception as e:
             print("Error processing row:", e)
