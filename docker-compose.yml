@@ -43,6 +43,17 @@ services:
     volumes:
       - ./spark-app:/spark-app
 
+
+  notification:
+    build:
+      context: .
+      dockerfile: Dockerfile.notification
+    container_name: notification
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+
 # ======== Docker commands =============
 
 
@@ -60,11 +71,11 @@ services:
 
 
   # docker exec -it spark spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 /spark-app/stream_inference.py
-  # docker exec -it kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic prediction-topic --from-beginning
+  # docker exec -it kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic raw_audio_topic --from-beginning
   
 
 
 
 
 
-  # #docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --delete --topic <topic_name>
+  # #docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --delete --topic raw_audio_topic
