@@ -1,5 +1,5 @@
 import re
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from sequence_manager import start_sequence, stop_sequence, sequence_state
 from kafka_consumer import start_consumer_thread
@@ -7,11 +7,15 @@ from kafka_consumer import start_consumer_thread
 app = FastAPI()
 predictions_store = []
 
-start_consumer_thread(predictions_store)
 
 ID_MAP = {"00":0, "02":1, "04":2}
 DEFAULT_ID = 2
 DEFAULT_SOURCE = "00000090"
+alert_email_global = []
+machine_alarm_states = dict()
+
+start_consumer_thread(predictions_store, machine_alarm_states)
+
 
 def parse_filename(name):
     pattern = r"^[a-zA-Z]+_id_(\d{2})_(\d+)\.wav$"
@@ -44,7 +48,10 @@ def get_status():
 
 
 @app.post("/start_sequence")
-async def start(files: list[UploadFile] = File(...)):
+async def start(files: list[UploadFile] = File(...), alert_email: str = Form(...)):
+
+    global alert_email_global
+    alert_email_global = alert_email.strip()
 
     processed = []
 
@@ -66,3 +73,11 @@ async def start(files: list[UploadFile] = File(...)):
 def stop():
     stop_sequence()
     return {"status": "stopped"}
+
+@app.get("/alert_email")
+def get_alert_email():
+    return {"email": alert_email_global}
+
+@app.get("/machine_states")
+def get_machine_states():
+    return machine_alarm_states
