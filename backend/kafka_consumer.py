@@ -39,4 +39,4 @@ def start_consumer_thread(predictions_store, machine_alarm_states):
                     machine_alarm_states[machine_id] = "ALARM"
 
     thread = threading.Thread(target=consume, daemon=True)
-    thread.start()
+    thread.start()  

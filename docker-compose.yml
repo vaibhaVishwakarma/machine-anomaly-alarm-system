@@ -64,9 +64,7 @@ services:
 
   # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --list
 
-  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic raw_audio_topic  --partitions 1 --replication-factor 1
-  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic prediction_topic  --partitions 1 --replication-factor 1
-  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic alert_event_topic --partitions 1 --replication-factor 1
+  # docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic raw_audio_topic  --partitions 1 --replication-factor 1; docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic prediction_topic  --partitions 1 --replication-factor 1; docker exec -it kafka kafka-topics --bootstrap-server kafka:9092 --create --topic alert_event_topic --partitions 1 --replication-factor 1
   
 
 
