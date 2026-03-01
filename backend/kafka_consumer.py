@@ -1,6 +1,11 @@
 import json
 from kafka import KafkaConsumer
 import threading
+import time
+
+ALARM_WINDOW_SECONDS = 150  # match your event horizon
+
+last_alarm_timestamp = {}
 
 def start_consumer_thread(predictions_store, machine_alarm_states):
 
@@ -30,10 +35,8 @@ def start_consumer_thread(predictions_store, machine_alarm_states):
                 alarm_state = data.get("alarm_state")
 
                 if alarm_state == "ALARM_TRIGGERED":
+                    last_alarm_timestamp[machine_id] = time.time()
                     machine_alarm_states[machine_id] = "ALARM"
-
-                elif alarm_state == "RECOVERY":
-                    machine_alarm_states[machine_id] = "NORMAL"
 
     thread = threading.Thread(target=consume, daemon=True)
     thread.start()

@@ -1,8 +1,12 @@
 import json
+import re
+import requests
 from kafka import KafkaConsumer
-from config import KAFKA_BOOTSTRAP, ALERT_TOPIC, COOLDOWN_SECONDS
+from config import KAFKA_BOOTSTRAP, ALERT_TOPIC, COOLDOWN_SECONDS, BACKEND_URL
 from notifier import send_email
 from state_manager import AlertStateManager
+
+EMAIL_REGEX = r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"
 
 state_manager = AlertStateManager(COOLDOWN_SECONDS)
 
@@ -16,6 +20,19 @@ consumer = KafkaConsumer(
 
 print("Notification Service Started...")
 
+
+def get_recipients():
+    try:
+        response = requests.get(f"{BACKEND_URL}/alert_email", timeout=5)
+        data = response.json()
+        raw_string = data.get("email", "")
+        recipients = re.findall(EMAIL_REGEX, raw_string)
+        return list(set(recipients))  # remove duplicates
+    except Exception as e:
+        print("Failed to fetch recipients:", e)
+        return []
+
+
 for message in consumer:
 
     alert = message.value
@@ -23,11 +40,21 @@ for message in consumer:
 
     print("Received alert:", alert)
 
+    if alert.get("alarm_state") != "ALARM_TRIGGERED":
+        continue
+
     if state_manager.should_send(machine_id):
 
-        print("Sending notification...")
+        recipients = get_recipients()
+
+        if not recipients:
+            print("No valid recipients found.")
+            continue
+
+        print("Sending notification to:", recipients)
+
         try:
-            send_email(alert)
+            send_email(alert, recipients)
             print("Email sent successfully.")
         except Exception as e:
             print("Email failed:", e)

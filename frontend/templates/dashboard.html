@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Streaming Dashboard</title>
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
@@ -25,15 +24,69 @@
             margin-bottom: 25px;
         }
 
-        canvas {
-            max-height: 300px;
+        /* ---------------- TOP ROW ---------------- */
+
+        .top-row {
+            display: flex;
+            gap: 30px;
+            align-items: stretch;
+            flex-wrap: wrap;
+        }
+
+        .inference-card {
+            flex: 2;
+            min-width: 500px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .status-card {
+            flex: 1;
+            min-width: 300px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---------------- MACHINE NAVBAR ---------------- */
+
+        .machine-navbar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        .machine-badge {
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            color: white;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        /* ---------------- BOTTOM ROW ---------------- */
+
+        .responsive-row {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        }
+
+        .throughput-box {
+            flex: 2;
+            min-width: 300px;
         }
 
         .circle-container {
+            flex: 1;
+            min-width: 200px;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: center;
-            height: 200px;
         }
 
         .circle {
@@ -48,30 +101,52 @@
             font-weight: bold;
             background: #eef5ff;
         }
+
+        @media (max-width: 900px) {
+            .top-row, .responsive-row {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
+
 <body>
 
 <h2>Real-Time Monitoring Dashboard</h2>
 
-<div class="card">
-    <h3>Last 150 Seconds Results</h3>
-    <canvas id="resultChart"></canvas>
-</div>
+<!-- ================= TOP SECTION ================= -->
+<div class="top-row">
 
-<div class="card">
-    <h3>Data Throughput (KB/sec)</h3>
-    <canvas id="dataChart"></canvas>
-</div>
-
-<div class="card circle-container">
-    <div class="circle" id="totalDataCircle">
-        0 KB
+    <div class="card inference-card">
+        <h3>Last 150 Seconds Results</h3>
+        <canvas id="resultChart"></canvas>
     </div>
+
+    <div class="card status-card">
+        <h3>Machine Status</h3>
+        <div id="machineNavbar" class="machine-navbar"></div>
+    </div>
+
 </div>
+
+<!-- ================= BOTTOM SECTION ================= -->
+<div class="card responsive-row">
+
+    <div class="throughput-box">
+        <h3>Data Throughput (KB/sec)</h3>
+        <canvas id="dataChart"></canvas>
+    </div>
+
+    <div class="circle-container">
+        <h3>Total Data Used</h3>
+        <div class="circle" id="totalDataCircle">0 KB</div>
+    </div>
+
+</div>
+
 <script>
 
-const WINDOW_SECONDS = 150;   // 150 sec window (30 inferences × 5 sec)
+const WINDOW_SECONDS = 150;
 
 const resultCtx = document.getElementById("resultChart");
 const dataCtx = document.getElementById("dataChart");
@@ -117,9 +192,7 @@ const dataChart = new Chart(dataCtx, {
     },
     options: {
         scales: {
-            y: {
-                beginAtZero: true
-            }
+            y: { beginAtZero: true }
         }
     }
 });
@@ -132,16 +205,53 @@ async function updateDashboard() {
     const res2 = await fetch("/sequence_status");
     const seqStatus = await res2.json();
 
+    const res3 = await fetch("/machine_states");
+    const states = await res3.json();
+
+    updateMachineNavbar(predictions, states);
     updateResultChart(predictions);
     updateDataChart(predictions);
     updateTotalData(seqStatus.total_bytes);
+}
+
+function updateMachineNavbar(predictions, states) {
+
+    const container = document.getElementById("machineNavbar");
+    container.innerHTML = "";
+
+    const now = Date.now() / 1000;
+
+    const activePredictions = predictions.filter(
+        p => now - p.timestamp <= WINDOW_SECONDS
+    );
+
+    const activeMachines = [...new Set(
+        activePredictions.map(p => p.machine_id)
+    )];
+
+    activeMachines.forEach(machineId => {
+
+        const badge = document.createElement("div");
+        badge.className = "machine-badge";
+        badge.innerText = "Machine " + machineId;
+
+        if (states[String(machineId)] === "ALARM") {
+            badge.style.backgroundColor = "#dc3545";
+        } else {
+            badge.style.backgroundColor = "#28a745";
+        }
+
+        container.appendChild(badge);
+    });
 }
 
 function updateResultChart(predictions) {
 
     const now = Date.now() / 1000;
 
-    const lastWindow = predictions.filter(p => now - p.timestamp <= WINDOW_SECONDS);
+    const lastWindow = predictions.filter(
+        p => now - p.timestamp <= WINDOW_SECONDS
+    );
 
     const labels = [];
     const data = [];
@@ -154,12 +264,9 @@ function updateResultChart(predictions) {
         if (p.prediction === "ANOMALY") {
             data.push(2);
             colors.push("#dc3545");
-        } else if (p.prediction === "NORMAL") {
+        } else {
             data.push(1);
             colors.push("#28a745");
-        } else {
-            data.push(0);
-            colors.push("#6c757d");
         }
     });
 
@@ -173,7 +280,9 @@ function updateDataChart(predictions) {
 
     const now = Date.now() / 1000;
 
-    const lastWindow = predictions.filter(p => now - p.timestamp <= WINDOW_SECONDS);
+    const lastWindow = predictions.filter(
+        p => now - p.timestamp <= WINDOW_SECONDS
+    );
 
     const labels = [];
     const data = [];
@@ -189,7 +298,6 @@ function updateDataChart(predictions) {
 }
 
 function updateTotalData(totalBytes) {
-
     const kb = (totalBytes / 1024).toFixed(1);
     document.getElementById("totalDataCircle").innerText = kb + " KB";
 }

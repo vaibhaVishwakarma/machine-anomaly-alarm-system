@@ -1,8 +1,9 @@
 import re
+import time
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from sequence_manager import start_sequence, stop_sequence, sequence_state
-from kafka_consumer import start_consumer_thread
+from kafka_consumer import start_consumer_thread, last_alarm_timestamp
 
 app = FastAPI()
 predictions_store = []
@@ -78,6 +79,19 @@ def stop():
 def get_alert_email():
     return {"email": alert_email_global}
 
+ALARM_WINDOW_SECONDS = 150
+
 @app.get("/machine_states")
 def get_machine_states():
-    return machine_alarm_states
+
+    current_time = time.time()
+    states = {}
+
+    for machine_id, ts in last_alarm_timestamp.items():
+
+        if current_time - ts <= ALARM_WINDOW_SECONDS:
+            states[machine_id] = "ALARM"
+        else:
+            states[machine_id] = "NORMAL"
+
+    return states

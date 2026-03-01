@@ -19,11 +19,22 @@
 
         .card {
             background: white;
-            padding: 20px;
+            padding: 25px;
             border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-            max-width: 700px;
-            margin-bottom: 25px;
+            max-width: 800px;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input[type="email"],
+        input[type="file"] {
+            margin-bottom: 15px;
+            width: 100%;
         }
 
         #fileList {
@@ -65,14 +76,20 @@
             cursor: pointer;
         }
 
-        .start { background: #28a745; color: white; }
-        .stop { background: #dc3545; color: white; }
+        .start {
+            background: #28a745;
+            color: white;
+        }
+
+        .stop {
+            background: #dc3545;
+            color: white;
+        }
 
         .status {
             margin-top: 10px;
             font-size: 14px;
         }
-
     </style>
 </head>
 <body>
@@ -81,8 +98,13 @@
 
 <div class="card">
 
+    <!-- EMAIL SECTION -->
+    <label for="alertEmail">Alert Email</label>
+    <input type="email" id="alertEmail" placeholder="Enter notification email" required>
+
+    <!-- FILE INPUT -->
+    <label>Select Audio Files</label>
     <input type="file" id="fileInput" multiple accept=".wav">
-    <br><br>
 
     <ul id="fileList"></ul>
 
@@ -107,34 +129,27 @@ new Sortable(fileList, {
 });
 
 document.getElementById("fileInput").addEventListener("change", function(e) {
-
     files = Array.from(e.target.files);
-
     renderFileList();
 });
 
 function renderFileList() {
-
     fileList.innerHTML = "";
 
     files.forEach((file, index) => {
-
         const li = document.createElement("li");
         li.className = "file-item";
         li.dataset.index = index;
         li.innerHTML = file.name + `<div class="progress-bar"></div>`;
-
         fileList.appendChild(li);
     });
 }
 
 function getOrderedFiles() {
-
     const ordered = [];
     document.querySelectorAll(".file-item").forEach(item => {
         ordered.push(files[item.dataset.index]);
     });
-
     return ordered;
 }
 
@@ -142,15 +157,23 @@ async function startSequence() {
 
     if (locked) return;
 
+    const email = document.getElementById("alertEmail").value.trim();
+
+    if (!email) {
+        alert("Please enter alert email.");
+        return;
+    }
+
     locked = true;
 
     const orderedFiles = getOrderedFiles();
-
     const formData = new FormData();
 
     orderedFiles.forEach(file => {
         formData.append("files", file);
     });
+
+    formData.append("alert_email", email);
 
     await fetch("/start_sequence", {
         method: "POST",
@@ -162,7 +185,6 @@ async function startSequence() {
 }
 
 async function stopSequence() {
-
     await fetch("/stop_sequence", { method: "POST" });
     locked = false;
     document.getElementById("statusText").innerText = "Sequence stopped.";
@@ -192,15 +214,12 @@ function updateUI(data) {
     items.forEach((item, idx) => {
 
         item.classList.remove("active");
-
         const bar = item.querySelector(".progress-bar");
         bar.style.width = "0%";
 
         if (idx === data.current_clip && data.running) {
-
             item.classList.add("active");
 
-            // fake progress animation
             const progress = ((Date.now()/1000) % 10) * 10;
             bar.style.width = progress + "%";
         }
