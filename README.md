@@ -7,6 +7,37 @@ When sustained anomalies are detected, the system emits alert events that are ro
 
 ---
 
+## Configuration notes
+- Internal Docker services use `kafka:29092` for Kafka communication
+- The host port `localhost:9092` is exposed for manual inspection or debugging, but the application services themselves use `kafka:29092`
+- Spark consumes from `raw_audio_topic` and publishes to `prediction_topic` and `alert_event_topic`
+- Notification service reads from `alert_event_topic` and uses the backend endpoint for recipient lookup
+
+---
+
+## Running the project
+
+### Prerequisites
+Make sure Docker and Docker Compose are installed.
+
+### Start the full stack
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- Kafka and Zookeeper
+- Backend
+- Spark
+- Notification service
+
+### Access the application
+- Upload UI: http://localhost:8000/
+- Dashboard: http://localhost:8000/dashboard
+
+---
+
 ## Architecture
 
 The system is composed of the following services:
@@ -143,37 +174,6 @@ The backend exposes the following endpoints:
 
 - POST /stop_sequence
   - Stops the active processing sequence
-
----
-
-## Running the project
-
-### Prerequisites
-Make sure Docker and Docker Compose are installed.
-
-### Start the full stack
-```bash
-docker compose up --build
-```
-
-This starts:
-
-- Kafka and Zookeeper
-- Backend
-- Spark
-- Notification service
-
-### Access the application
-- Upload UI: http://localhost:8000/
-- Dashboard: http://localhost:8000/dashboard
-
----
-
-## Configuration notes
-- Kafka inside Docker: `kafka:29092`
-- Kafka from the host: `localhost:9092`
-- Spark consumes from `raw_audio_topic` and publishes to `prediction_topic` and `alert_event_topic`
-- Notification service reads from `alert_event_topic` and uses the backend endpoint for recipient lookup
 
 ---
 
