@@ -1,5 +1,6 @@
 import re
 import time
+from pathlib import Path # Import Path for robust path handling
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from sequence_manager import start_sequence, stop_sequence, sequence_state
@@ -8,6 +9,8 @@ from kafka_consumer import start_consumer_thread, last_alarm_timestamp
 app = FastAPI()
 predictions_store = []
 
+# Define the base directory for templates
+TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 ID_MAP = {"00":0, "02":1, "04":2}
 DEFAULT_ID = 2
@@ -30,12 +33,14 @@ def parse_filename(name):
 
 @app.get("/", response_class=HTMLResponse)
 def upload_page():
-    return open("../frontend/templates/upload.html").read()
+    # Use Path to open the template correctly
+    return (TEMPLATE_DIR / "upload.html").read_text()
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    return open("../frontend/templates/dashboard.html").read()
+    # Use Path to open the template correctly
+    return (TEMPLATE_DIR / "dashboard.html").read_text()
 
 
 @app.get("/predictions")

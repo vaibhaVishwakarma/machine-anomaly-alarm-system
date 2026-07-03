@@ -1,10 +1,14 @@
+import os
+
 KAFKA_BOOTSTRAP = "kafka:29092"
 ALERT_TOPIC = "alert_event_topic"
-BACKEND_URL = "http://host.docker.internal:8000"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+# ---- CONFIGURE THIS FOR NOTIFICATION BACKOFF AND DEDUPLICATION ----
+COOLDOWN_SECONDS = 150  # 150 sec window
+
+# ---- YOUR GMAIL CREDENTIALS HERE ----
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
-EMAIL_USER = "example@gmail.com" # only GMAIL is configured for DEMO
-EMAIL_PASSWORD = "xxxxxxxxxxxxxxxx" #your-16-character-app-password-here
-
-COOLDOWN_SECONDS = 150  # 150 sec window
+EMAIL_USER = "example@gmail.com"  # only GMAIL is configured for DEMO
+EMAIL_PASSWORD = "XXXXXXXXXXXXXX"  # your-16-character-app-password-here || MANAGE GOOGLE ACCOUNT > APP PASSWORDS > GENERATE NEW APP PASSWORD > GENERATE > COPY THE 16 CHARACTERS

@@ -30,19 +30,58 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
+  init-kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: init-kafka
+    depends_on:
+      - kafka
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      echo 'Waiting for Kafka port 29092 to open...'
+      until nc -z kafka 29092; do
+        echo 'Kafka is still starting up... waiting 1 second'
+        sleep 1
+      done
+      
+      echo 'Kafka port is open! Creating topics...'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic raw_audio_topic --partitions 1 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic prediction_topic --partitions 1 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic alert_event_topic --partitions 1 --replication-factor 1
+      
+      echo 'Successfully created the following topics:'
+      kafka-topics --bootstrap-server kafka:29092 --list
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.backend
+    container_name: backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      init-kafka:
+        condition: service_completed_successfully
+
   spark:
     build:
       context: .
       dockerfile: Dockerfile.spark
     container_name: spark
     depends_on:
-      - kafka
+      init-kafka:
+        condition: service_completed_successfully
+    restart: on-failure
     ports:
       - "7077:7077"
       - "8081:8080"
     volumes:
       - ./spark-app:/spark-app
-
+    command:
+      - /bin/bash
+      - -c
+      - |
+        sleep 10
+        spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 /spark-app/stream_inference.py
 
   notification:
     build:
@@ -50,9 +89,12 @@ services:
       dockerfile: Dockerfile.notification
     container_name: notification
     depends_on:
-      - kafka
+      init-kafka:
+        condition: service_completed_successfully
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - BACKEND_URL=http://backend:8000
+    restart: on-failure
 
 # ======== Docker commands =============
 

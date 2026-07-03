@@ -16,14 +16,15 @@ RUN apt-get update && apt-get install -y \
 # ------------------------------------------------------------
 # Install Python dependencies
 # ------------------------------------------------------------
-COPY backend/requirements.txt ./requirements.txt
+# FIX: Removed "backend/" prefix since context is already inside the folder
+COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ------------------------------------------------------------
-# Copy backend code
+# Copy backend code (now includes templates)
 # ------------------------------------------------------------
-COPY backend/ /app/
-COPY frontend/templates /app/templates
+# FIX: Changed "backend/" to "." 
+COPY . /app/
 
 # ------------------------------------------------------------
 # Run FastAPI
