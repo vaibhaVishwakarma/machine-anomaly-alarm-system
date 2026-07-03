@@ -148,32 +148,27 @@ This makes the alerting flow more stable and reduces alert storms.
 The backend exposes the following endpoints:
 
 ### UI endpoints
-- GET /
-  - Renders the upload page
 
-- GET /dashboard
-  - Renders the monitoring dashboard
+| Endpoint | Purpose |
+| --- | --- |
+| GET / | Renders the upload page |
+| GET /dashboard | Renders the monitoring dashboard |
 
 ### Data endpoints
-- GET /predictions
-  - Returns the latest prediction stream data
 
-- GET /sequence_status
-  - Returns the current sequence execution state
-
-- GET /machine_states
-  - Returns per-machine alarm state information
-
-- GET /alert_email
-  - Returns the configured alert email address
+| Endpoint | Purpose |
+| --- | --- |
+| GET /predictions | Returns the latest prediction stream data |
+| GET /sequence_status | Returns the current sequence execution state |
+| GET /machine_states | Returns per-machine alarm state information |
+| GET /alert_email | Returns the configured alert email address |
 
 ### Action endpoints
-- POST /start_sequence
-  - Starts the processing sequence for uploaded files
-  - Accepts audio files and an alert email value
 
-- POST /stop_sequence
-  - Stops the active processing sequence
+| Endpoint | Purpose |
+| --- | --- |
+| POST /start_sequence | Starts the processing sequence for uploaded files and accepts an alert email value |
+| POST /stop_sequence | Stops the active processing sequence |
 
 ---
 
