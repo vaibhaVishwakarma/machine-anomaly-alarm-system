@@ -1,2 +1,6 @@
 /Dataset
 /notification_service/config.py
+/spark-app/model/*
+/**/*.pyc
+/**/*.pyd
+/**/*__pycache__/
