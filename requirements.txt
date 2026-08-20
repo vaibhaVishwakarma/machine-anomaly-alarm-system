@@ -4,6 +4,12 @@ python-multipart
 kafka-python
 torch
 torchaudio
-numpy
-torchcodec
 soundfile
+numpy
+scipy
+scikit-learn
+pandas
+matplotlib
+seaborn
+requests
+kagglehub

@@ -1,4 +1,10 @@
-/Dataset
+# Dataset folder is tracked, but audio subfolders and audio files are gitignored (too large)
+/Dataset/*/
+/Dataset/**/*.wav
+/Dataset/**/*.mp3
+/Dataset/**/*.flac
+!/Dataset/download_dataset.py
+!/Dataset/README.md
 /notification_service/config.py
 /spark-app/model/*
 /**/*.pyc

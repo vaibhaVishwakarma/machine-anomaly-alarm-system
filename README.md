@@ -5,6 +5,8 @@ This project implements a real-time anomaly detection pipeline for industrial ma
 
 When sustained anomalies are detected, the system emits alert events that are routed to a notification service for email delivery. The design is modular, containerized, and orchestrated via Docker Compose.
 
+- 📦 **Pre-trained Model on Kaggle**: **[vaibhavishwakarma/sw-wavenet-arcface-pump-machines-only](https://www.kaggle.com/models/vaibhavishwakarma/sw-wavenet-arcface-pump-machines-only/)**
+
 ---
 
 ## Configuration notes
@@ -18,7 +20,11 @@ When sustained anomalies are detected, the system emits alert events that are ro
 ## Running the project
 
 ### Prerequisites
-Make sure Docker and Docker Compose are installed.
+- Docker and Docker Compose installed.
+- (Optional) Download dataset audio for testing:
+  ```bash
+  python Dataset/download_dataset.py
+  ```
 
 ### Start the full stack
 ```bash
@@ -29,7 +35,7 @@ This starts:
 
 - Kafka and Zookeeper
 - Backend
-- Spark
+- Spark 
 - Notification service
 
 ### Access the application
@@ -38,30 +44,94 @@ This starts:
 
 ---
 
+## 🎯 Model Evaluation & Processing Layer Advantage
+
+This system uses a **SW-WaveNet** architecture with **ArcFace** representation learning to perform anomalous sound detection directly from raw machine audio and log-mel spectrograms. (Pretrained weights available on **[Kaggle Models](https://www.kaggle.com/models/vaibhavishwakarma/sw-wavenet-arcface-pump-machines-only/)**; see the complete **[Training & Evaluation Guide](Training%20And%20Evaluation/README.md)** for architecture deep dive and training scripts).
+
+To bridge the gap between noisy instantaneous AI predictions and reliable industrial operations, the system integrates a **Temporal Processing Layer (Binomial Consensus Filter)** that dramatically reduces false alarms while maximizing true anomaly detection.
+
+![Evaluation Plots](assets/Plots.png)
+
+---
+
+### 1. Frame-Level Detection Performance
+
+Every 5 seconds, the model evaluates the latest 10-second audio window (160,000 samples at 16 kHz) and computes an anomaly score from the target machine logits ($-\text{logit}_{\text{target}}$).
+
+Thresholds ($\tau_m$) are calibrated dynamically per machine to guarantee high sensitivity:
+
+| Machine ID | Threshold ($\tau_m$) | Target Logit | Frame Detection Rate (TPR) | Frame Miss Rate (FNR) | Frame False Alarm Rate (FPR) | Frame Accuracy |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Machine ID 00** | `-24.0857` | `24.09` | **74.83%** (107/143) | 25.17% (36/143) | 16.00% (16/100) | 78.60% |
+| **Machine ID 02** | `-25.4341` | `25.43` | **73.87%** (82/111) | 26.13% (29/111) | 21.00% (21/100) | 76.30% |
+| **Machine ID 04** | `-18.2705` | `18.27` | **90.00%** (90/100) | 10.00% (10/100) | 0.00% (0/100) | 95.00% |
+
+---
+
+### 2. The Power of the Processing Layer (Temporal Binomial Consensus)
+
+In real factory environments, instantaneous single-frame predictions are prone to noise (e.g., dropping a tool, momentary electrical spikes, or passing vehicles). Triggering alarms on isolated frames leads to alert fatigue and false shut-downs.
+
+```text
+Stream:         [ 5s Chunk ]  [ 5s Chunk ]  [ 5s Chunk ]  [ 5s Chunk ]  [ 5s Chunk ]
+Model Input:    <------- 10s Window (Last 2 Chunks) ------->
+Buffer (25s):   [ Pred 1 ]    [ Pred 2 ]    [ Pred 3 ]    [ Pred 4 ]    [ Pred 5 ]
+```
+
+#### The Stability Decision Rule ($\ge 3$ of 5 Consensus)
+- **$0\times, 1\times,$ or $2\times$ out of 5 Anomalies**: Classified as **unstable / transient noise** $\to$ **Ignored (No Alarm)**.
+- **$3\times, 4\times,$ or $5\times$ out of 5 Anomalies**: Classified as a **stable, persistent breakdown** $\to$ **ALARM IS TRIGGERED! 🚨**.
+
+#### Binomial Consensus Formula
+The probability of triggering an alarm over the 5-frame window is modeled as:
+
+$$P(\text{Alarm}) = P(k \ge 3 \text{ of } 5) = \sum_{k=3}^{5} \binom{5}{k} p^k (1 - p)^{5-k} = 10 p^3(1-p)^2 + 5 p^4(1-p) + p^5$$
+
+- **Factor 1: MISSED ALARM RATE** $= 1 - P(\text{Alarm} \mid p = \text{Frame Detection Rate})$
+- **Factor 2: FALSE ALARM RATE** $= P(\text{Alarm} \mid p = \text{Frame False Alarm Rate})$
+
+---
+
+### 3. Processing Layer Results: Massive False Alarm Suppression
+
+Applying the 3-of-5 consensus rule transforms noisy single-frame predictions into robust, enterprise-grade alarm reliability:
+
+| Machine ID | Single Frame Detection | Single Frame Miss (FNR) | Single Frame False Alarm | Layer True Alarm Rate ($\ge 3/5$) | **MISSED ALARM RATE** ($1 - \text{True Alarm}$) | **FALSE ALARM RATE** ($P(\text{Alarm} \mid \text{Normal})$) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Machine ID 00** | 74.83% | 25.17% | 16.00% | **89.463%** | **10.537%** | **3.176%** *(down from 16.0%)* |
+| **Machine ID 02** | 73.87% | 26.13% | 21.00% | **88.425%** | **11.575%** | **6.589%** *(down from 21.0%)* |
+| **Machine ID 04** | 90.00% | 10.00% | 0.00% | **99.144%** | **0.856%** | **0.000%** *(zero false alarms)* |
+
+#### Key Benefits:
+1. **False Alarm Collapse**: On Machine ID 00 & 02, false alarms drop from **$16\% \text{--} 21\%$ down to $3.1\% \text{--} 6.6\%$**, eliminating up to **80% of spurious alerts**.
+2. **Detection Amplification**: True alarm reliability increases from $\sim 74\%$ up to **$88.4\% \text{--} 99.1\%$** because sustained anomalous acoustics consistently satisfy the 3-of-5 persistence criteria.
+
+![Paper Benchmarks](assets/paper-benchmarks.png)
+
+---
+
 ## Architecture
 
-The system is composed of the following services:
+The system is composed of the following modular services:
 
-- Backend API
-  - Serves the upload page and dashboard
-  - Receives uploaded audio files
-  - Publishes audio events to Kafka
-  - Exposes monitoring and alert-related endpoints
+- **[Backend API & Web Dashboard](backend/README.md)**
+  - Serves the upload page and live monitoring dashboard
+  - Receives uploaded audio files and streams 1-second chunks to Kafka
+  - Exposes monitoring and alert-related telemetry endpoints
 
-- Kafka
-  - Acts as the central event backbone for asynchronous communication
-  - Connects the backend, Spark, and notification service
+- **Kafka & Zookeeper**
+  - Central event backbone for asynchronous streaming communication
+  - Connects the backend, Spark streaming, and notification service
 
-- Spark Structured Streaming
-  - Reads audio from Kafka
-  - Runs inference on streaming audio windows
-  - Publishes prediction and alert events back to Kafka
+- **[Spark Structured Streaming](spark-app/README.md)**
+  - Ingests audio streams from Kafka in micro-batches
+  - Runs sliding-window inference with pre-trained SW-WaveNet
+  - Evaluates the temporal decision layer and publishes predictions & alert events
 
-- Notification Service
+- **[Notification Service](notification_service/README.md)**
   - Consumes alert events from Kafka
-  - Deduplicates repeated alerts
-  - Applies exponential backoff for failed notifications
-  - Sends email alerts through SMTP
+  - Deduplicates repeated alerts using per-machine cooldown windows
+  - Retrieves active recipients and delivers alert emails via SMTP (TLS)
 
 ```text
 Upload UI → Backend → Kafka → Spark → Kafka → Backend / Notification Service
