@@ -9,4 +9,5 @@
 /spark-app/model/*
 /**/*.pyc
 /**/*.pyd
-/**/*__pycache__/
+/**/*.pdf
+**/*__pycache__/
